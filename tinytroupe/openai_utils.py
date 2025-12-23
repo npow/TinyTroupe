@@ -388,7 +388,7 @@ class AzureClient(OpenAIClient):
         logger.debug("Initializing AzureClient")
 
         super().__init__(cache_api_calls, cache_file_name)
-    
+
     def _setup_from_config(self):
         """
         Sets up the Azure OpenAI Service API configurations for this client,
@@ -410,6 +410,66 @@ class AzureClient(OpenAIClient):
                 api_version = config["OpenAI"]["AZURE_API_VERSION"],
                 azure_ad_token_provider=token_provider
             )
+
+
+class GeminiClient(OpenAIClient):
+    """
+    Client for Google Gemini API using OpenAI-compatible endpoint.
+    """
+
+    def __init__(self, cache_api_calls=default["cache_api_calls"], cache_file_name=default["cache_file_name"]) -> None:
+        logger.debug("Initializing GeminiClient")
+        super().__init__(cache_api_calls, cache_file_name)
+
+    def _setup_from_config(self):
+        """
+        Sets up the Gemini API using Google's OpenAI-compatible endpoint.
+        Requires GEMINI_API_KEY or GOOGLE_API_KEY environment variable.
+        """
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY or GOOGLE_API_KEY environment variable is required for Gemini API")
+
+        logger.info("Using Gemini API via OpenAI-compatible endpoint.")
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+        )
+
+    def _raw_model_call(self, model, chat_api_params):
+        """
+        Calls the Gemini API, removing unsupported parameters.
+        """
+        # Gemini doesn't support these OpenAI-specific parameters
+        for param in ["frequency_penalty", "presence_penalty", "stream"]:
+            if param in chat_api_params:
+                del chat_api_params[param]
+
+        return super()._raw_model_call(model, chat_api_params)
+
+
+class OpenRouterClient(OpenAIClient):
+    """
+    Client for OpenRouter API - unified access to multiple models.
+    """
+
+    def __init__(self, cache_api_calls=default["cache_api_calls"], cache_file_name=default["cache_file_name"]) -> None:
+        logger.debug("Initializing OpenRouterClient")
+        super().__init__(cache_api_calls, cache_file_name)
+
+    def _setup_from_config(self):
+        """
+        Sets up OpenRouter API. Requires OPENROUTER_API_KEY environment variable.
+        """
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY environment variable is required for OpenRouter API")
+
+        logger.info("Using OpenRouter API.")
+        self.client = OpenAI(
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1"
+        )
     
 
 ###########################################################################
@@ -499,9 +559,11 @@ def force_api_cache(cache_api_calls, cache_file_name=default["cache_file_name"])
     for client in _api_type_to_client.values():
         client.set_api_cache(cache_api_calls, cache_file_name)
 
-# default client
+# default clients
 register_client("openai", OpenAIClient())
 register_client("azure", AzureClient())
+register_client("gemini", GeminiClient())
+register_client("openrouter", OpenRouterClient())
 
 
 

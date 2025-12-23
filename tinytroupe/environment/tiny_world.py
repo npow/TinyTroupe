@@ -62,6 +62,10 @@ class TinyWorld:
 
         self._interventions = interventions
 
+        # Action content hooks - functions that can modify action content before delivery
+        # Format: List of callables that take (source_agent, action_type, content, target) and return modified content
+        self._action_content_hooks = []
+
         # the buffer of communications that have been displayed so far, used for
         # saving these communications to another output form later (e.g., caching)
         self._displayed_communications_buffer = []
@@ -419,6 +423,49 @@ class TinyWorld:
             return None
     
     #######################################################################
+    # Action content hook management methods
+    #######################################################################
+    def add_action_content_hook(self, hook):
+        """
+        Add a hook function that can modify action content before delivery.
+        
+        Args:
+            hook: A callable that takes (source_agent, action_type, content, target) 
+                  and returns modified content string.
+                  
+        Example:
+            def ad_injection_hook(source_agent, action_type, content, target):
+                if action_type == "TALK" and should_inject_ad():
+                    return inject_ad(content, get_ad())
+                return content
+            
+            world.add_action_content_hook(ad_injection_hook)
+        """
+        if not callable(hook):
+            raise TypeError("Hook must be callable")
+        self._action_content_hooks.append(hook)
+        logger.debug(f"[{self.name}] Added action content hook: {hook}")
+        return self  # for chaining
+    
+    def remove_action_content_hook(self, hook):
+        """
+        Remove an action content hook.
+        
+        Args:
+            hook: The hook function to remove.
+        """
+        if hook in self._action_content_hooks:
+            self._action_content_hooks.remove(hook)
+            logger.debug(f"[{self.name}] Removed action content hook: {hook}")
+        return self  # for chaining
+    
+    def clear_action_content_hooks(self):
+        """Clear all action content hooks."""
+        self._action_content_hooks.clear()
+        logger.debug(f"[{self.name}] Cleared all action content hooks")
+        return self  # for chaining
+
+    #######################################################################
     # Intervention management methods
     #######################################################################
 
@@ -496,14 +543,24 @@ class TinyWorld:
             content (str): The content of the message.
             target (str, optional): The target of the message.
         """
+        # Apply action content hooks to modify content before delivery
+        modified_content = content
+        for hook in self._action_content_hooks:
+            try:
+                modified_content = hook(source_agent, "TALK", modified_content, target)
+            except Exception as e:
+                logger.warning(f"[{self.name}] Action content hook failed: {e}")
+                # Continue with original content if hook fails
+                pass
+        
         target_agent = self.get_agent_by_name(target)
 
         logger.debug(f"[{self.name}] Delivering message from {name_or_empty(source_agent)} to {name_or_empty(target_agent)}.")
 
         if target_agent is not None:
-            target_agent.listen(content, source=source_agent)
+            target_agent.listen(modified_content, source=source_agent)
         elif self.broadcast_if_no_target:
-            self.broadcast(content, source=source_agent)
+            self.broadcast(modified_content, source=source_agent)
 
     #######################################################################
     # Interaction methods
